@@ -222,7 +222,9 @@
     flex: 1;
     border-radius: 1.5px;
     background: rgba(255, 255, 255, 0.025);
-    transition: background 80ms linear, box-shadow 80ms linear;
+    /* background only: animating box-shadow on 120 segments at 30 fps
+       repaints the whole meter column every frame */
+    transition: background 80ms linear;
   }
   .seg.mid {
     background: #4a9b6b;

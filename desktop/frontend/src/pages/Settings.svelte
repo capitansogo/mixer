@@ -108,7 +108,7 @@
 
       <div class="form">
         <div class="field">
-          <label class="field-label">Порт по умолчанию (auto-connect)</label>
+          <div class="field-label">Порт по умолчанию (auto-connect)</div>
           <div class="row">
             <select bind:value={$cfg.comPort}>
               <option value="">— не подключаться автоматически —</option>
@@ -119,7 +119,7 @@
         </div>
 
         <div class="field">
-          <label class="field-label">Скорость порта (baud)</label>
+          <div class="field-label">Скорость порта (baud)</div>
           <input type="number" bind:value={$cfg.baudRate} min="9600" step="1" />
           <div class="hint">По умолчанию 115200 — совпадает с прошивкой.</div>
         </div>
@@ -143,7 +143,7 @@
         </label>
 
         <div class="field">
-          <label class="field-label">Зона нечувствительности (deadzone)</label>
+          <div class="field-label">Зона нечувствительности (deadzone)</div>
           <input type="number" bind:value={$cfg.noiseReduction} min="0" max="50" step="1" />
           <div class="hint">В единицах АЦП 0..1023. Значения ниже порога обнуляются.</div>
         </div>

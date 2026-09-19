@@ -1,11 +1,24 @@
 <script lang="ts">
-  import { cfg, connected, status } from '../lib/stores';
-  import { SendCommand, SetLEDMode } from '../../wailsjs/go/main/App.js';
+  import { onMount } from 'svelte';
+  import { cfg, connected, status, deviceState } from '../lib/stores';
+  import { RequestDeviceState, SendCommand, SetLEDMode } from '../../wailsjs/go/main/App.js';
 
   let activeTheme = 0;
   let brightness = 20;
 
   $: ledMode = $cfg?.ledMode ?? 0;
+
+  // The device is the source of truth for theme/brightness (it keeps them
+  // in EEPROM and can change them via slider gestures). Whenever it
+  // reports STATE, mirror it into the controls.
+  $: if ($deviceState) {
+    activeTheme = $deviceState.theme;
+    brightness = $deviceState.brightness;
+  }
+
+  onMount(() => {
+    if ($connected) RequestDeviceState().catch(() => {});
+  });
 
   const MODES = [
     {
@@ -46,6 +59,10 @@
     send(`T:${id}`);
   }
 
+  $: syncHint = $connected && !$deviceState
+    ? 'Ожидаю STATE от устройства (старая прошивка не отвечает на GET)'
+    : '';
+
   function applyBrightness() {
     send(`B:${brightness}`);
   }
@@ -75,6 +92,8 @@
       <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 5.99 19.53 19H4.47L12 5.99M12 2 1 21h22L12 2zm1 14h-2v2h2v-2zm0-6h-2v4h2v-4z" fill="currentColor"/></svg>
       Не подключено — изменения никуда не уйдут. Подключись на главной.
     </div>
+  {:else if syncHint}
+    <div class="warning soft">{syncHint}</div>
   {/if}
 
   <section class="card">
@@ -175,6 +194,11 @@
   }
   .sub { color: var(--text-dim); margin: 8px 0 0; font-size: 0.9rem; }
 
+  .warning.soft {
+    background: rgba(255, 122, 24, 0.06);
+    border-color: rgba(255, 122, 24, 0.25);
+    color: var(--amber-soft);
+  }
   .warning {
     display: inline-flex;
     align-items: center;

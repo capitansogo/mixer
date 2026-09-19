@@ -6,12 +6,13 @@
     ConfigPath,
     Disconnect,
     GetConfig,
-    IsConnected,
+    GetConnectionInfo,
     ListPorts,
   } from '../wailsjs/go/main/App.js';
   import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime.js';
   import {
-    values, connected, status, selectedPort, ports, configPath, cfg,
+    values, connected, reconnecting, status, selectedPort, ports, configPath, cfg,
+    deviceState, type Config, type DeviceState,
   } from './lib/stores';
   import Home from './pages/Home.svelte';
   import Bindings from './pages/Bindings.svelte';
@@ -60,8 +61,6 @@
     }
     try {
       await Connect($selectedPort);
-      $connected = await IsConnected();
-      $status = $connected ? `Подключено · ${$selectedPort}` : '';
     } catch (e) {
       $status = `${e}`;
     }
@@ -69,9 +68,22 @@
 
   async function disconnect() {
     await Disconnect();
-    $connected = await IsConnected();
     $status = 'Отключено';
     $values = [0, 0, 0, 0, 0];
+  }
+
+  // Pull the backend's view of the link. The backend also pushes
+  // serial-connected / serial-disconnected events, so this is only needed
+  // on mount (the auto-connect may have happened before the UI existed).
+  async function syncConnection() {
+    try {
+      const info = await GetConnectionInfo();
+      $connected = info.connected;
+      $reconnecting = info.reconnecting;
+      if (info.port) $selectedPort = info.port;
+      if (info.connected && !$status) $status = `Подключено · ${info.port}`;
+      else if (info.reconnecting) $status = `Переподключение · ${info.port}`;
+    } catch {}
   }
 
   onMount(async () => {
@@ -82,20 +94,37 @@
     try { $configPath = await ConfigPath(); } catch {}
     await refreshPorts();
 
-    setTimeout(async () => {
-      $connected = await IsConnected();
-      if ($connected && !$status) $status = `Авто-подключено · ${$selectedPort}`;
-    }, 600);
-
     EventsOn('slider-values', (v: number[]) => { $values = v; });
     EventsOn('serial-error', (msg: string) => { $status = msg; });
     EventsOn('audio-error',  (msg: string) => { $status = `audio · ${msg}`; });
+    EventsOn('serial-connected', (port: string) => {
+      $connected = true;
+      $reconnecting = false;
+      $selectedPort = port;
+      $status = `Подключено · ${port}`;
+    });
+    EventsOn('serial-disconnected', (reason: string) => {
+      $connected = false;
+      $reconnecting = false; // a following 'serial-reconnecting' flips it back
+      $deviceState = null;
+      $values = [0, 0, 0, 0, 0];
+      $status = reason ? `Связь потеряна · ${reason}` : 'Отключено';
+    });
+    EventsOn('serial-reconnecting', (port: string) => {
+      $reconnecting = true;
+      $status = `Переподключение · ${port}`;
+    });
+    EventsOn('device-state', (st: DeviceState) => { $deviceState = st; });
+    EventsOn('config-reloaded', (c: Config) => { $cfg = c; });
+
+    await syncConnection();
   });
 
   onDestroy(() => {
-    EventsOff('slider-values');
-    EventsOff('serial-error');
-    EventsOff('audio-error');
+    for (const ev of [
+      'slider-values', 'serial-error', 'audio-error', 'serial-connected',
+      'serial-disconnected', 'serial-reconnecting', 'device-state', 'config-reloaded',
+    ]) EventsOff(ev);
   });
 </script>
 
@@ -157,13 +186,15 @@
           <button class="ghost" on:click={refreshPorts} disabled={$connected} title="Обновить">
             <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 0 0-7.43 11h2.13A6 6 0 0 1 18 12h-3l4 4 4-4h-3a8 8 0 0 0-2.35-5.65Z" fill="currentColor"/></svg>
           </button>
-          {#if !$connected}
+          {#if $connected}
+            <button on:click={disconnect}>Отключить</button>
+          {:else if $reconnecting}
+            <button on:click={disconnect} title="Прекратить попытки переподключения">Отмена</button>
+          {:else}
             <button class="primary" on:click={connect}>
               <span>Подключить</span>
               <svg viewBox="0 0 24 24" width="14" height="14"><path d="M13 7l5 5-5 5v-3H6v-4h7V7z" fill="currentColor"/></svg>
             </button>
-          {:else}
-            <button on:click={disconnect}>Отключить</button>
           {/if}
         </div>
       </div>
@@ -335,6 +366,7 @@
     background: var(--signal);
     box-shadow: 0 0 8px var(--signal-glow);
     animation: pulse-signal 2s ease-in-out infinite;
+    will-change: opacity;
   }
   .device-text { color: var(--text-soft); }
 
@@ -441,6 +473,7 @@
     background: var(--signal);
     box-shadow: 0 0 8px var(--signal-glow);
     animation: pulse-signal 1.8s ease-in-out infinite;
+    will-change: opacity;
   }
   .status-text {
     white-space: nowrap;
