@@ -15,7 +15,7 @@
   const SPECIAL = [
     { id: 'master', label: 'Master',     desc: 'Общий уровень Windows' },
     { id: 'system', label: 'System',     desc: 'Звуки системы' },
-    { id: 'mic',    label: 'Mic',        desc: 'Микрофон' },
+    { id: 'mic',    label: 'Mic',        desc: 'Микрофон (устройство записи по умолчанию)' },
     { id: 'game',   label: 'Foreground', desc: 'Активное окно' },
   ];
 

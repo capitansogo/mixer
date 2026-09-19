@@ -19,8 +19,13 @@ export type AudioSession = {
   isSystem: boolean;
 };
 
+export type DeviceState = { theme: number; brightness: number; mode: number };
+
 export const values = writable<number[]>([0, 0, 0, 0, 0]);
 export const connected = writable<boolean>(false);
+export const reconnecting = writable<boolean>(false);
+/** Last STATE report from the firmware (theme/brightness/mode); null until the device answered. */
+export const deviceState = writable<DeviceState | null>(null);
 export const status = writable<string>('');
 export const selectedPort = writable<string>('');
 export const ports = writable<string[]>([]);

@@ -2,12 +2,19 @@
 #include <EEPROM.h>
 #include "SliderLEDControl.h"
 
-// ---------- DEEJ-COMPATIBLE UPLINK ----------
-// We send "v1|v2|v3|v4|v5\n" every 10 ms at 115200 baud — same as the
-// reference firmware, so existing deej clients keep working.
+// ---------- UPLINK ----------
+// Frame format "v1|v2|v3|v4|v5\n" at 115200 baud (deej-style). Unlike deej
+// we only send when a slider actually moved (>= SEND_DELTA raw units), at
+// most every SEND_MIN_MS, plus a keepalive frame every SEND_KEEPALIVE_MS so
+// the PC can tell the link is alive and re-sync after a reconnect. That
+// cuts idle traffic from 100 lines/s to 2 lines/s.
 const int NUM_SLIDERS = 5;
 int analogSliderValues[NUM_SLIDERS];
+int lastSentValues[NUM_SLIDERS] = {-1, -1, -1, -1, -1};
 unsigned long lastSent = 0;
+const unsigned long SEND_MIN_MS = 20;        // 50 Hz cap while moving
+const unsigned long SEND_KEEPALIVE_MS = 500; // idle heartbeat
+const int SEND_DELTA = 2;                    // raw ADC units
 
 // Set to true to print labeled per-pin values for wiring debug.
 // WARNING: breaks the deej protocol — disable before using with deej.
@@ -176,12 +183,35 @@ void sendSliderValues() {
         printAllAnalogPins();
         return;
     }
-    String out;
+    // Fixed buffer instead of String concatenation: no heap churn.
+    char out[NUM_SLIDERS * 5 + 2];
+    int n = 0;
     for (int i = 0; i < NUM_SLIDERS; i++) {
-        out += String(analogSliderValues[i]);
-        if (i < NUM_SLIDERS - 1) out += '|';
+        n += snprintf(out + n, sizeof(out) - n, i ? "|%d" : "%d", analogSliderValues[i]);
+        lastSentValues[i] = analogSliderValues[i];
     }
     Serial.println(out);
+}
+
+// True if any slider moved enough since the last transmitted frame.
+bool slidersChanged() {
+    for (int i = 0; i < NUM_SLIDERS; i++) {
+        int d = analogSliderValues[i] - lastSentValues[i];
+        if (d >= SEND_DELTA || d <= -SEND_DELTA) return true;
+    }
+    return false;
+}
+
+// "STATE:<theme>,<brightness>,<mode>" — sent on GET and whenever the
+// device changes one of these on its own (slider gestures), so the PC GUI
+// always shows what the hardware is really doing.
+void sendState() {
+    Serial.print("STATE:");
+    Serial.print(currentTheme);
+    Serial.print(',');
+    Serial.print(brightness);
+    Serial.print(',');
+    Serial.println(ledMode);
 }
 
 // ---------- DOWNLINK (PC → ESP32 commands) ----------
@@ -192,6 +222,7 @@ void sendSliderValues() {
 //   R                 — clear all overrides, repaint current theme
 //   MODE:<n>          — 0=position, 1=rainbow, 2=meter; persisted
 //   M:<v1>,…,<v5>     — peak meter values 0..1023 for meter mode
+//   GET               — reply "STATE:<theme>,<brightness>,<mode>"
 //   PING              — reply "PONG" (used by PC GUI to identify our port)
 // Unknown lines are silently ignored to keep the uplink readable.
 
@@ -240,16 +271,22 @@ void handleCommand(const String& line) {
         Serial.println("PONG");
         return;
     }
+    if (line == "GET") {
+        sendState();
+        return;
+    }
     if (line == "R") {
         clearOverrides();
         return;
     }
     if (line.startsWith("T:")) {
         setTheme(line.substring(2).toInt());
+        sendState();
         return;
     }
     if (line.startsWith("B:")) {
         setBrightness(line.substring(2).toInt());
+        sendState();
         return;
     }
     if (line.startsWith("O:")) {
@@ -267,6 +304,7 @@ void handleCommand(const String& line) {
     }
     if (line.startsWith("MODE:")) {
         setLedMode(line.substring(5).toInt());
+        sendState();
         return;
     }
     if (line.startsWith("M:")) {
@@ -317,6 +355,10 @@ void setup() {
 
     setBrightness(brightness);
     setTheme(currentTheme);
+
+    // Opening the COM port on the PC usually resets us (DTR), so announce
+    // our state once we're up: the GUI syncs without having to ask.
+    sendState();
 }
 
 void loop() {
@@ -329,11 +371,12 @@ void loop() {
         sliders[i].sample();
     }
 
-    // Local UI: double-tap-to-zero gestures on sliders 2..5
-    if (sliders[1].checkForDoubleZero()) setBrightness(brightness - 10);
-    if (sliders[2].checkForDoubleZero()) setBrightness(brightness + 10);
-    if (sliders[3].checkForDoubleZero()) setTheme(currentTheme - 1);
-    if (sliders[4].checkForDoubleZero()) setTheme(currentTheme + 1);
+    // Local UI: double-tap-to-zero gestures on sliders 2..5. Each one
+    // changes device state, so tell the PC about it.
+    if (sliders[1].checkForDoubleZero()) { setBrightness(brightness - 10); sendState(); }
+    if (sliders[2].checkForDoubleZero()) { setBrightness(brightness + 10); sendState(); }
+    if (sliders[3].checkForDoubleZero()) { setTheme(currentTheme - 1);     sendState(); }
+    if (sliders[4].checkForDoubleZero()) { setTheme(currentTheme + 1);     sendState(); }
 
     switch (ledMode) {
         case LED_MODE_POSITION:
@@ -355,11 +398,15 @@ void loop() {
             break;
     }
 
-    if (millis() - lastSent > 10) {
+    unsigned long now = millis();
+    unsigned long sinceSent = now - lastSent;
+    if (sinceSent >= SEND_MIN_MS) {
         for (int i = 0; i < NUM_SLIDERS; i++) {
             analogSliderValues[i] = sliders[i].getAverageValue();
         }
-        sendSliderValues();
-        lastSent = millis();
+        if (slidersChanged() || sinceSent >= SEND_KEEPALIVE_MS) {
+            sendSliderValues();
+            lastSent = now;
+        }
     }
 }

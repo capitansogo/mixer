@@ -106,9 +106,21 @@ func Load() (Config, bool, error) {
 		return Config{}, false, fmt.Errorf("read %s: %w", p, err)
 	}
 
+	// Scalars fall back to defaults when absent from the file, but the
+	// maps must NOT be pre-populated: yaml.v3 merges into an existing map
+	// key by key, which would resurrect a binding the user deleted from
+	// the file by hand. Start them nil and default only when missing.
 	cfg := Default()
+	cfg.SliderMapping = nil
+	cfg.Calibration = nil
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, false, fmt.Errorf("parse %s: %w", p, err)
+	}
+	if cfg.SliderMapping == nil {
+		cfg.SliderMapping = Default().SliderMapping
+	}
+	if cfg.Calibration == nil {
+		cfg.Calibration = DefaultCalibration()
 	}
 	if cfg.BaudRate == 0 {
 		cfg.BaudRate = DefaultBaud

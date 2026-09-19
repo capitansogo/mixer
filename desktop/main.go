@@ -27,6 +27,7 @@ func main() {
 		},
 		BackgroundColour:  &options.RGBA{R: 13, G: 17, B: 23, A: 1},
 		OnStartup:         app.startup,
+		OnShutdown:        app.shutdown,
 		HideWindowOnClose: true, // close button → tray; quit via tray menu
 		StartHidden:       autostart.IsHiddenStart(),
 		Bind: []interface{}{
