@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { cfg, status, type AudioSession } from '../lib/stores';
+  import { cfg, status, MIX_PREFIX, type AudioSession } from '../lib/stores';
   import {
     ListAudioSessions,
     SaveConfig,
@@ -20,6 +20,14 @@
   ];
 
   $: mapping = $cfg?.sliderMapping ?? {};
+  $: mixTargets = [
+    { id: `${MIX_PREFIX}mic`, label: 'Голос', desc: 'Микрофон в Аудио-миксе' },
+    ...($cfg?.audioMix?.sources ?? []).map((s) => ({
+      id: `${MIX_PREFIX}${s.exe}`,
+      label: s.exe.replace(/\.exe$/, ''),
+      desc: 'Громкость в Аудио-миксе',
+    })),
+  ];
 
   async function refresh() {
     loading = true;
@@ -99,7 +107,11 @@
 
         <div class="patch">
           {#each (mapping[i] ?? []) as t}
-            <span class="patch-chip" class:special={SPECIAL.some(s => s.id === t)}>
+            <span
+              class="patch-chip"
+              class:special={SPECIAL.some(s => s.id === t)}
+              class:mixchip={t.startsWith(MIX_PREFIX)}
+            >
               <span class="dot"></span>
               <span class="patch-name">{t}</span>
               <button class="patch-x" on:click={() => removeTarget(i, t)} title="Убрать">
@@ -125,6 +137,18 @@
                   <button class="pick-btn special" on:click={() => addTarget(i, s.id)}>
                     <span class="pb-label">{s.label}</span>
                     <span class="pb-desc">{s.desc}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="pick-section">
+              <div class="tech-label">Аудио-микс · громкость в виртуальном микрофоне</div>
+              <div class="pick-row">
+                {#each mixTargets as m}
+                  <button class="pick-btn mix" on:click={() => addTarget(i, m.id)}>
+                    <span class="pb-label">{m.label}</span>
+                    <span class="pb-desc">{m.desc}</span>
                   </button>
                 {/each}
               </div>
@@ -278,6 +302,11 @@
     border-color: rgba(111, 182, 255, 0.28);
     color: var(--info);
   }
+  .patch-chip.mixchip {
+    background: rgba(74, 222, 128, 0.07);
+    border-color: rgba(74, 222, 128, 0.28);
+    color: var(--signal);
+  }
   .patch-chip:hover { border-color: rgba(255, 122, 24, 0.5); }
   .patch-chip .dot {
     width: 5px;
@@ -346,6 +375,7 @@
   }
   .pick-btn:hover { border-color: var(--amber); }
   .pick-btn.special:hover { border-color: var(--info); }
+  .pick-btn.mix:hover { border-color: var(--signal); }
   .pb-label { font-family: var(--font-mono); font-weight: 500; }
   .pb-desc {
     font-size: 0.65rem;

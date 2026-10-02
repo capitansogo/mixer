@@ -46,6 +46,39 @@ type Config struct {
 	// LedMode mirrors the firmware's MODE: command — 0 position,
 	// 1 rainbow, 2 meter (PC pushes audio peaks to the LED strips).
 	LedMode int `yaml:"led_mode" json:"ledMode"`
+
+	// AudioMix configures the "Аудио-микс" bus: mic + app audio mixed
+	// into a virtual cable that other apps use as their microphone.
+	AudioMix AudioMix `yaml:"audio_mix" json:"audioMix"`
+}
+
+// MixSource is one application mixed into the Аудио-микс bus.
+type MixSource struct {
+	Exe   string  `yaml:"exe"   json:"exe"`
+	Gain  float32 `yaml:"gain"  json:"gain"` // fader position 0..1
+	Muted bool    `yaml:"muted" json:"muted"`
+}
+
+// AudioMix is the persisted state of the Аудио-микс page. Slider targets
+// "mix:mic" / "mix:<exe>" in SliderMapping drive these gains from hardware.
+type AudioMix struct {
+	Enabled      bool        `yaml:"enabled"       json:"enabled"`
+	MicDevice    string      `yaml:"mic_device"    json:"micDevice"`    // endpoint id, "" = auto
+	OutputDevice string      `yaml:"output_device" json:"outputDevice"` // endpoint id, "" = auto (VB-Cable)
+	MicGain      float32     `yaml:"mic_gain"      json:"micGain"`
+	MicMuted     bool        `yaml:"mic_muted"     json:"micMuted"`
+	Sources      []MixSource `yaml:"sources"       json:"sources"`
+}
+
+// DefaultAudioMix: off, mic at full, music-ish apps at half (≈ -12 dB).
+func DefaultAudioMix() AudioMix {
+	return AudioMix{
+		MicGain: 1,
+		Sources: []MixSource{
+			{Exe: "spotify.exe", Gain: 0.5},
+			{Exe: "chrome.exe", Gain: 0.5},
+		},
+	}
 }
 
 // Default returns a sensible starter config. Picked to mirror the v1
@@ -65,6 +98,7 @@ func Default() Config {
 		InvertSliders:  false,
 		NoiseReduction: 4,
 		Calibration:    DefaultCalibration(),
+		AudioMix:       DefaultAudioMix(),
 	}
 }
 

@@ -73,7 +73,7 @@
 
         <div class="ch-targets">
           {#each (mapping[i] ?? []) as t}
-            <span class="chip">{t}</span>
+            <span class="chip" class:mix={t.startsWith('mix:')}>{t.startsWith('mix:') ? `микс · ${t.slice(4).replace(/\.exe$/, '')}` : t}</span>
           {/each}
           {#if !(mapping[i]?.length)}
             <span class="chip-empty">— нет привязки —</span>
@@ -281,6 +281,11 @@
     padding: 1px 7px;
     white-space: nowrap;
     letter-spacing: 0.01em;
+  }
+  .chip.mix {
+    color: var(--signal);
+    background: rgba(74, 222, 128, 0.07);
+    border-color: rgba(74, 222, 128, 0.26);
   }
   .chip-empty {
     font-family: var(--font-mono);

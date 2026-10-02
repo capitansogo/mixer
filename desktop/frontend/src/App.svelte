@@ -18,8 +18,9 @@
   import Bindings from './pages/Bindings.svelte';
   import Settings from './pages/Settings.svelte';
   import Themes from './pages/Themes.svelte';
+  import AudioMix from './pages/AudioMix.svelte';
 
-  type Page = 'home' | 'bindings' | 'settings' | 'themes';
+  type Page = 'home' | 'bindings' | 'mix' | 'settings' | 'themes';
   let page: Page = 'home';
 
   const NAV: { id: Page; label: string; icon: string }[] = [
@@ -32,6 +33,11 @@
       id: 'bindings',
       label: 'Привязки',
       icon: 'M9 17H7a5 5 0 1 1 0-10h2v2H7a3 3 0 1 0 0 6h2v2zm6 0h-2v-2h2a3 3 0 1 0 0-6h-2V7h2a5 5 0 0 1 0 10zM8 11h8v2H8v-2z',
+    },
+    {
+      id: 'mix',
+      label: 'Аудио-микс',
+      icon: 'M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2t2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11h2q0 2.075 1.463 3.538T12 16t3.538-1.463T17 11h2q0 2.25-1.7 4.225T13 17.925V21h-2Z',
     },
     {
       id: 'themes',
@@ -213,6 +219,7 @@
         <div in:fade={{ duration: 240 }}>
           {#if page === 'home'}<Home />
           {:else if page === 'bindings'}<Bindings />
+          {:else if page === 'mix'}<AudioMix />
           {:else if page === 'settings'}<Settings />
           {:else if page === 'themes'}<Themes />{/if}
         </div>

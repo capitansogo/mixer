@@ -2,6 +2,17 @@ import { writable } from 'svelte/store';
 
 export type Calibration = { min: number; max: number };
 
+export type MixSource = { exe: string; gain: number; muted: boolean };
+
+export type AudioMix = {
+  enabled: boolean;
+  micDevice: string;
+  outputDevice: string;
+  micGain: number;
+  micMuted: boolean;
+  sources: MixSource[];
+};
+
 export type Config = {
   sliderMapping: Record<number, string[]>;
   comPort: string;
@@ -10,7 +21,33 @@ export type Config = {
   noiseReduction: number;
   calibration: Record<number, Calibration>;
   ledMode: number;
+  audioMix: AudioMix;
 };
+
+/** Live state of one Аудио-микс source ("mic" or an exe name). */
+export type MixSourceState = {
+  id: string;
+  gain: number;
+  muted: boolean;
+  active: boolean;
+  level: number;
+  error: string;
+};
+
+export type MixStatus = {
+  enabled: boolean;
+  running: boolean;
+  mic: string;
+  output: string;
+  error: string;
+  outLevel: number;
+  sources: MixSourceState[];
+};
+
+export type MixDevice = { id: string; name: string; default: boolean; virtual: boolean };
+
+/** Slider-target prefix that drives an Аудио-микс gain instead of a Windows volume. */
+export const MIX_PREFIX = 'mix:';
 
 export type AudioSession = {
   pid: number;

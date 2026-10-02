@@ -8,11 +8,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	maudio "mixer/internal/audio"
 	"mixer/internal/autostart"
 	mconfig "mixer/internal/config"
+	"mixer/internal/mixbus"
 	"mixer/internal/notify"
 	mserial "mixer/internal/serial"
 	mtray "mixer/internal/tray"
@@ -50,6 +52,14 @@ type App struct {
 
 	errMu        sync.Mutex
 	lastAudioErr time.Time
+
+	// Аудио-микс: mic + app audio → virtual cable.
+	mix      *mixbus.Engine
+	mixWatch atomic.Bool // GUI page open → stream mix-status events
+
+	// Debounced config save for high-rate changes (mix faders).
+	saveMu    sync.Mutex
+	saveTimer *time.Timer
 }
 
 // changeThreshold suppresses redundant SetVolume calls. ESP32 ADC has
@@ -109,8 +119,12 @@ func (a *App) startup(ctx context.Context) {
 		wruntime.LogInfof(ctx, "created default config at %s", path)
 	}
 
+	a.mix = mixbus.New()
+	a.mix.Apply(mixSettings(cfg.AudioMix))
+
 	go a.pumpReader()
 	go a.applier()
+	go a.pumpMix()
 	go mtray.Run(mtray.Callbacks{
 		OnOpen:   func() { wruntime.WindowShow(a.ctx) },
 		OnReload: func() { _, _ = a.ReloadConfig() },
@@ -139,6 +153,10 @@ func (a *App) shutdown(ctx context.Context) {
 	a.cancelReconnectLocked()
 	a.connMu.Unlock()
 	a.reader.Stop()
+	a.flushSave()
+	if a.mix != nil {
+		a.mix.Close()
+	}
 }
 
 // ---------- Serial pump ----------
@@ -466,6 +484,15 @@ func (a *App) pushMeter(client *maudio.Client, lastForeground *string) {
 	}
 	peaks := snap.Peaks(mapping, *lastForeground, mserial.NumSliders)
 	snap.Release()
+	for i := range peaks {
+		for _, t := range mapping[i] {
+			if id, ok := mixTarget(t); ok {
+				if v := a.mix.Level(id); v > peaks[i] {
+					peaks[i] = v
+				}
+			}
+		}
+	}
 
 	// 1023 mirrors the firmware's ADC range so the existing showLights()
 	// math fills the bar as if it were a physical slider at that position.
@@ -559,6 +586,10 @@ func (a *App) applySlider(client *maudio.Client, snap *maudio.Snapshot, idx int,
 	a.mu.RUnlock()
 
 	for _, t := range targets {
+		if id, ok := mixTarget(t); ok {
+			a.setMixGainFromSlider(id, level)
+			continue
+		}
 		name := t
 		if t == maudio.TargetForeground {
 			resolveForeground(client, lastForeground)
@@ -676,6 +707,12 @@ func (a *App) SaveConfig(cfg mconfig.Config) error {
 	if cfg.SliderMapping == nil {
 		cfg.SliderMapping = map[int][]string{}
 	}
+	// The Аудио-микс section is owned by the dedicated Mix* methods (and
+	// the hardware sliders); a page saving a possibly stale copy of the
+	// whole config must not roll those changes back.
+	a.mu.RLock()
+	cfg.AudioMix = a.cfg.AudioMix
+	a.mu.RUnlock()
 	if err := mconfig.Save(cfg); err != nil {
 		return err
 	}
@@ -694,6 +731,7 @@ func (a *App) ReloadConfig() (mconfig.Config, error) {
 	a.mu.Lock()
 	a.cfg = cfg
 	a.mu.Unlock()
+	a.mix.Apply(mixSettings(cfg.AudioMix))
 	a.requestResync()
 	wruntime.EventsEmit(a.ctx, "config-reloaded", cfg)
 	return cfg, nil
